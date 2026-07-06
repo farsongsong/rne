@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이미지 기반 pH 예측 AI — 알고리즘 설명 자료</title>
+<style>
+  :root{
+    --bg:#FFFFFF;
+    --bg-soft:#F6F5F1;
+    --ink:#15171A;
+    --muted:#6E7075;
+    --line:#E6E3DC;
+    --code-bg:#14161A;
+    --code-text:#E8E6DF;
+
+    --rf:#1E7A5D;     /* RandomForest — 숲/앙상블 */
+    --knn:#3A4DB0;    /* k-NN — 거리/좌표 */
+    --pinn:#8B3F63;   /* PINN — 물리+데이터의 융합 */
+    --neutral:#1B6E5B;
+
+    --accent: var(--neutral);
+    --serif: Georgia, 'Nanum Myeongjo', 'Noto Serif KR', serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+    --mono: 'SF Mono', 'Consolas', Menlo, monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:var(--sans);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important;} }
+
+  .deck{ position:relative; width:100vw; height:100vh; }
+
+  .slide{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; justify-content:center;
+    padding: 5.5vh 7vw 12vh;
+    opacity:0; visibility:hidden; transform:translateY(14px);
+    transition: opacity .5s ease, transform .5s ease;
+    pointer-events:none;
+    overflow-y:auto;
+  }
+  .slide.active{ opacity:1; visibility:visible; transform:translateY(0); pointer-events:auto; }
+  .slide::before{
+    content:''; position:absolute; top:-18%; right:-10%; width:46vw; height:46vw; max-width:640px; max-height:640px;
+    background:radial-gradient(circle, var(--accent) 0%, transparent 68%);
+    opacity:.08; pointer-events:none; z-index:-1; transition:background .5s ease;
+  }
+  .slide::after{
+    content:''; position:absolute; left:0; top:0; bottom:0; width:6px; background:var(--accent); opacity:.85; transition:background .5s ease;
+  }
+
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:12px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:20px; font-weight:600;
+  }
+  .eyebrow .bar{ width:22px; height:2px; background:var(--accent); }
+
+  h1.display{
+    font-family:var(--serif); font-weight:400;
+    font-size:clamp(30px, 4.6vw, 58px); line-height:1.16; letter-spacing:-0.01em;
+    max-width:17ch; color:var(--ink);
+  }
+  h1.display em{ font-style:normal; color:var(--accent); border-bottom:3px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .lede{ margin-top:18px; font-size:clamp(14.5px,1.3vw,17px); color:var(--muted); max-width:60ch; line-height:1.75; }
+  .meta{ margin-top:34px; font-family:var(--mono); font-size:12.5px; color:var(--muted); }
+  .meta b{ color:var(--ink); font-weight:600; }
+
+  ul.points{ list-style:none; margin-top:22px; display:flex; flex-direction:column; gap:13px; max-width:58ch; }
+  ul.points li{ display:flex; gap:12px; align-items:flex-start; font-size:clamp(14.5px,1.35vw,16.5px); line-height:1.6; color:var(--ink); }
+  ul.points li::before{ content:'—'; color:var(--accent); font-family:var(--mono); flex-shrink:0; }
+
+  .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:5.5vw; align-items:start; margin-top:8px; }
+  .grid2.wide-left{ grid-template-columns: 1.15fr .85fr; }
+  @media (max-width:960px){ .grid2{grid-template-columns:1fr;} }
+
+  /* 색공간 카드 */
+  .csgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:26px; }
+  .cscard{ border:1px solid var(--line); border-radius:8px; padding:20px; background:var(--bg-soft); }
+  .cscard .swatch{ width:100%; height:34px; border-radius:5px; margin-bottom:14px; }
+  .cscard h4{ font-family:var(--serif); font-weight:400; font-size:18px; margin-bottom:8px; }
+  .cscard p{ font-size:13px; color:var(--muted); line-height:1.6; }
+
+  /* 코드 패널 */
+  .codewrap{ margin-top:18px; }
+  .codepanel{
+    background:var(--code-bg); color:var(--code-text); border-radius:8px;
+    padding:18px 20px; font-family:var(--mono); font-size:13px; line-height:1.75;
+    overflow-x:auto; white-space:pre;
+  }
+  .codepanel .kw{ color:#7FB8E0; }
+  .codepanel .fn{ color:#E0C56F; }
+  .codepanel .str{ color:#9FCB88; }
+  .codepanel .com{ color:#7A7D85; font-style:italic; }
+  .codepanel .num{ color:#D98A6B; }
+  .codetag{ font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+
+  /* 알고리즘 슬라이드 공통 */
+  .algo-badge{
+    display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border-radius:20px;
+    background:color-mix(in srgb, var(--accent) 12%, white); color:var(--accent);
+    font-family:var(--mono); font-size:11.5px; font-weight:600; margin-bottom:16px;
+  }
+  .analogy{
+    border-left:3px solid var(--accent); padding:14px 18px; background:var(--bg-soft);
+    border-radius:0 8px 8px 0; margin-top:18px; font-size:14px; line-height:1.7; color:var(--ink); max-width:52ch;
+  }
+  .analogy b{ color:var(--accent); }
+
+  /* 파이프라인 */
+  .pipeline{ display:flex; align-items:center; gap:0; margin-top:34px; flex-wrap:wrap; }
+  .pnode{ display:flex; flex-direction:column; align-items:center; gap:10px; width:150px; text-align:center; }
+  .pnode .dot{ width:44px; height:44px; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:14px; color:var(--muted); background:var(--bg); }
+  .pnode.on .dot{ border-color:var(--accent); color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, white); }
+  .pnode .lbl{ font-size:12.5px; color:var(--ink); font-weight:600; line-height:1.4; }
+  .pnode .sub{ font-size:11px; color:var(--muted); }
+  .pline{ flex:1; height:2px; background:var(--line); min-width:20px; margin-top:-30px; }
+
+  /* 표 */
+  table.data{ width:100%; border-collapse:collapse; margin-top:20px; font-size:13.5px; }
+  table.data th{ text-align:left; font-family:var(--mono); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:600; padding:0 10px 10px 0; border-bottom:1px solid var(--line); }
+  table.data td{ padding:10px 10px 10px 0; border-bottom:1px solid var(--line); }
+  table.data tr:last-child td{ border-bottom:none; }
+  table.data .swab{ display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:8px; vertical-align:-2px; border:1px solid var(--line); }
+  .metric-strong{ font-family:var(--mono); color:var(--accent); font-weight:700; }
+
+  .statgrid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:4px; }
+  .stat{ border:1px solid var(--line); border-radius:8px; padding:18px 20px; background:var(--bg-soft); }
+  .stat .num{ font-family:var(--serif); font-size:clamp(26px,3vw,36px); color:var(--accent); line-height:1; }
+  .stat .lbl{ font-family:var(--mono); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-top:8px; }
+
+  .closebig{ font-family:var(--serif); font-size:clamp(36px,5vw,68px); line-height:1.1; }
+  .closebig .accent{ color:var(--accent); }
+
+  /* 히어로 스와치 스트립 (표지 시그니처) */
+  .hero-strip{ display:flex; width:min(640px,60vw); height:64px; border-radius:10px; overflow:hidden; margin:30px 0 8px; box-shadow:0 18px 40px -18px rgba(0,0,0,.35); }
+  .hero-strip span{ flex:1; transition:flex .35s ease; position:relative; }
+  .hero-strip span:hover{ flex:1.8; }
+  .hero-strip .ph-tag{
+    position:absolute; bottom:6px; left:0; right:0; text-align:center;
+    font-family:var(--mono); font-size:10px; color:rgba(255,255,255,.92); opacity:0; transition:opacity .2s;
+  }
+  .hero-strip span:hover .ph-tag{ opacity:1; }
+
+  .bignum-badge{
+    display:inline-flex; align-items:baseline; gap:10px; margin-top:26px;
+    padding:14px 22px; border-radius:12px; background:var(--bg-soft); border:1px solid var(--line);
+  }
+  .bignum-badge .n{ font-family:var(--serif); font-size:clamp(30px,3.4vw,44px); color:var(--rf); line-height:1; }
+  .bignum-badge .t{ font-family:var(--mono); font-size:11.5px; color:var(--muted); letter-spacing:.04em; }
+
+  /* 큰 데이터 강조 섹션 */
+  .databand{ margin-top:8px; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .dcell{ text-align:center; padding:20px 10px; border-radius:10px; background:var(--bg-soft); border:1px solid var(--line); }
+  .dcell .n{ font-family:var(--serif); font-size:clamp(22px,2.6vw,32px); color:var(--ink); }
+  .dcell .n.accentnum{ color:var(--rf); }
+  .dcell .l{ font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:6px; letter-spacing:.05em; }
+
+  /* 색공간 상세 다이어그램 */
+  .csdetail{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:22px; }
+  .csdcard{ border:1px solid var(--line); border-radius:10px; padding:20px; background:var(--bg-soft); }
+  .csdcard h4{ font-family:var(--serif); font-weight:400; font-size:17px; margin-bottom:4px; }
+  .csdcard .ex{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-bottom:14px; }
+
+  .rgbbars{ display:flex; flex-direction:column; gap:7px; }
+  .rgbbar-row{ display:grid; grid-template-columns:16px 1fr 34px; align-items:center; gap:8px; }
+  .rgbbar-row .k{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .rgbbar-track{ height:10px; border-radius:5px; background:#EDECE7; overflow:hidden; }
+  .rgbbar-fill{ height:100%; border-radius:5px; }
+  .rgbbar-row .v{ font-family:var(--mono); font-size:10.5px; color:var(--muted); text-align:right; }
+
+  .huewheel{ position:relative; width:120px; height:120px; border-radius:50%; margin:0 auto 14px;
+    background:conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+  .huewheel::after{ content:''; position:absolute; inset:24px; background:var(--bg-soft); border-radius:50%; }
+  .huemarker{ position:absolute; left:50%; top:50%; width:2px; height:60px; transform-origin:top center; margin-left:-1px; }
+  .huemarker .dot{ position:absolute; top:-4px; left:50%; width:9px; height:9px; border-radius:50%; background:#fff; border:2px solid var(--ink); transform:translateX(-50%); }
+  .svbar{ height:9px; border-radius:5px; margin-bottom:10px; position:relative; }
+  .svbar .m{ position:absolute; top:-3px; width:15px; height:15px; border-radius:50%; background:#fff; border:2px solid var(--ink); transform:translateX(-50%); }
+  .svlabel{ font-family:var(--mono); font-size:10px; color:var(--muted); margin-bottom:4px; }
+
+  .labplane{ position:relative; width:100%; padding-top:100%; border-radius:8px; margin-bottom:10px;
+    background:
+      radial-gradient(circle at 15% 25%, #3FA65C 0%, transparent 55%),
+      radial-gradient(circle at 85% 25%, #D8C13A 0%, transparent 55%),
+      radial-gradient(circle at 15% 85%, #2E86C7 0%, transparent 55%),
+      radial-gradient(circle at 85% 85%, #E0503C 0%, transparent 55%),
+      #EDECE7; }
+  .labplane .pt{ position:absolute; width:11px; height:11px; border-radius:50%; background:#fff; border:2px solid var(--ink); transform:translate(-50%,-50%); }
+  .labplane .axis{ position:absolute; background:rgba(0,0,0,.18); }
+  .labplane .axis.h{ left:0; right:0; top:50%; height:1px; }
+  .labplane .axis.v{ top:0; bottom:0; left:50%; width:1px; }
+  .lbar{ height:9px; border-radius:5px; position:relative; background:linear-gradient(to right, #111 0%, #fff 100%); }
+  .lbar .m{ position:absolute; top:-3px; width:15px; height:15px; border-radius:50%; background:#fff; border:2px solid var(--ink); transform:translateX(-50%); }
+
+  /* 조명별 pH 색상 그리드 */
+  .lightgrid{ margin-top:22px; }
+  .lg-row{ display:grid; grid-template-columns:110px repeat(9,1fr); gap:6px; align-items:center; margin-bottom:8px; }
+  .lg-row .rowlabel{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .lg-swatch{ height:40px; border-radius:6px; }
+  .lg-head{ display:grid; grid-template-columns:110px repeat(9,1fr); gap:6px; margin-bottom:8px; }
+  .lg-head span{ text-align:center; font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+
+  /* 비교 표 */
+  .compare-table td.pro{ color:var(--rf); }
+  .compare-table td.con{ color:#B0472F; }
+
+  /* R²/MAE 카드 & 5-Fold */
+  .metricard{ border:1px solid var(--line); border-radius:10px; padding:22px; background:var(--bg-soft); }
+  .metricard h4{ font-family:var(--serif); font-weight:400; font-size:20px; margin-bottom:10px; }
+  .metricard .formula{ font-family:var(--mono); font-size:13px; color:var(--rf); background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 14px; margin:10px 0; display:inline-block; }
+  .metricard p{ font-size:13.5px; color:var(--muted); line-height:1.7; }
+
+  .cvgrid{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .cvrow{ display:grid; grid-template-columns:70px repeat(5,1fr); gap:6px; align-items:center; }
+  .cvrow .rl{ font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+  .cvcell{ height:26px; border-radius:5px; background:#EDECE7; }
+  .cvcell.test{ background:var(--rf); }
+
+  /* 실험 결과 : 임팩트 있는 색상 카드 스트립 */
+  .phcards{ display:grid; grid-template-columns:repeat(9,1fr); gap:8px; margin-top:22px; }
+  .phcard{ border-radius:12px; padding:14px 10px 12px; display:flex; flex-direction:column; justify-content:space-between; min-height:190px; box-shadow:0 10px 24px -14px rgba(0,0,0,.45); }
+  .phcard .phn{ font-family:var(--serif); font-size:26px; line-height:1; }
+  .phcard .phname{ font-family:var(--mono); font-size:9.5px; opacity:.85; margin-top:2px; }
+  .phcard .vals{ font-family:var(--mono); font-size:9px; line-height:1.65; opacity:.95; margin-top:10px; }
+  .phcard .vals b{ font-weight:700; }
+  @media (max-width:1100px){ .phcards{ grid-template-columns:repeat(5,1fr); } }
+
+  .corrbars-wide{ display:flex; flex-direction:column; gap:8px; margin-top:20px; max-width:640px; }
+  .corrbar-row{ display:grid; grid-template-columns:56px 1fr 56px; align-items:center; gap:10px; }
+  .corrbar-row .k{ font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .corrbar-track{ height:10px; border-radius:5px; background:#EDECE7; position:relative; overflow:visible; }
+  .corrbar-track::after{ content:''; position:absolute; left:50%; top:-3px; bottom:-3px; width:1.5px; background:rgba(0,0,0,.25); }
+  .corrbar-fill{ position:absolute; top:0; bottom:0; border-radius:5px; }
+  .corrbar-row .v{ font-family:var(--mono); font-size:11.5px; color:var(--ink); font-weight:700; text-align:right; }
+
+  /* 네비게이션 */
+  .bottom-nav{
+    position:fixed; left:0; right:0; bottom:0; height:64px;
+    display:flex; align-items:center; padding:0 7vw; gap:16px;
+    background:linear-gradient(to top, #FFFFFF 60%, rgba(255,255,255,0));
+    z-index:20; border-top:1px solid var(--line);
+  }
+  .dots{ display:flex; gap:8px; }
+  .sdot{ width:7px; height:7px; border-radius:50%; background:var(--line); cursor:pointer; border:none; padding:0; transition:transform .2s, background .3s, width .3s; }
+  .sdot.active{ background:var(--accent); width:20px; border-radius:5px; }
+  .pagenum{ font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-left:auto; }
+  .navhint{ position:fixed; top:4.5vh; right:6vw; font-family:var(--mono); font-size:10.5px; color:var(--muted); opacity:.7; z-index:20; }
+  .edgebtn{ position:fixed; top:0; height:100vh; width:7vw; z-index:15; background:transparent; border:none; cursor:pointer; }
+  .edgebtn.left{ left:0; } .edgebtn.right{ right:0; }
+</style>
+</head>
+<body>
+
+<div class="navhint">← → 또는 스페이스바로 이동</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1. 표지 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>2026 과학과제연구활동</div>
+    <h1 class="display">사진 한 장이<br><em>pH 값</em>이 되기까지</h1>
+    <p class="lede">이미지 기반 pH 예측 인공지능 모델 및 측정 프로그램 개발 — 알고리즘이 실제로 어떻게 작동하는지 실험 데이터·코드와 함께 설명합니다.</p>
+    <div class="hero-strip">
+      <span style="background:#dd3226"><span class="ph-tag">pH 2</span></span>
+      <span style="background:#e14a1e"><span class="ph-tag">pH 3</span></span>
+      <span style="background:#e8940a"><span class="ph-tag">pH 4</span></span>
+      <span style="background:#dcc019"><span class="ph-tag">pH 5</span></span>
+      <span style="background:#9dc22e"><span class="ph-tag">pH 6</span></span>
+      <span style="background:#33a24a"><span class="ph-tag">pH 7</span></span>
+      <span style="background:#1e9c78"><span class="ph-tag">pH 8</span></span>
+      <span style="background:#1c93c9"><span class="ph-tag">pH 9</span></span>
+      <span style="background:#2745b0"><span class="ph-tag">pH 10</span></span>
+    </div>
+    <div class="bignum-badge"><span class="n">R² 0.9981</span><span class="t">층화 5-Fold 교차검증<br>MAE 0.032</span></div>
+    <div class="meta">천안쌍용고등학교 &nbsp;·&nbsp; 지도교사 맹석주 &nbsp;·&nbsp; 김주헌 · 최우준 · 권송현 · 배지성</div>
+  </section>
+
+  <!-- 2. 연구 동기 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>연구 동기</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,42px)">같은 용액을 보고도<br>서로 다른 <em>pH</em>를 말했다</h1>
+    <ul class="points">
+      <li>화학 실험에서 만능지시약 색을 색상표와 눈으로 비교해 pH 판단</li>
+      <li>같은 용액인데도 조원마다 다른 pH 값을 제시하는 경우 발생</li>
+      <li>조명 밝기·종류, 사람마다 다른 색각 차이가 원인으로 추정</li>
+      <li><b>카메라로 찍은 색을 숫자로 바꾸고, AI가 그 숫자를 학습하면 더 객관적이지 않을까?</b></li>
+    </ul>
+  </section>
+
+  <!-- 3. 연구 목적 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>연구 목적</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,42px)">색상 정보로 pH를<br>예측하는 <em>시스템</em> 만들기</h1>
+    <ul class="points">
+      <li>사진에서 RGB·HSV·Lab 색상 정보를 수치로 추출해 pH를 예측</li>
+      <li>화학적 원리를 손실 함수에 반영한 물리 정보 신경망(PINN) 시험</li>
+      <li>용액 영역을 자동으로 찾아내는 전처리 알고리즘 구현</li>
+      <li>누구나 카메라·브라우저만으로 쓸 수 있는 웹 프로그램으로 완성</li>
+    </ul>
+  </section>
+
+  <!-- 4. 이론적 배경 : 색공간 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>이론적 배경</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,42px)">컴퓨터는 색을<br>어떻게 <em>숫자</em>로 볼까</h1>
+    <p class="lede">사람 눈에는 하나의 색이지만, 컴퓨터 안에서는 서로 다른 방식의 숫자 3세트로 동시에 저장됩니다.</p>
+    <div class="csgrid">
+      <div class="cscard">
+        <div class="swatch" style="background:linear-gradient(90deg,#E0503C,#3FA65C,#3452C4)"></div>
+        <h4>RGB</h4>
+        <p>빨강·초록·파랑 빛의 밝기(0~255)로 색을 표현. 가장 기본적인 방식이지만 조명이 바뀌면 세 값이 함께 흔들린다.</p>
+      </div>
+      <div class="cscard">
+        <div class="swatch" style="background:conic-gradient(#E0503C,#E8A23C,#3FA65C,#3452C4,#E0503C)"></div>
+        <h4>HSV</h4>
+        <p>색상(어떤 색인지)·채도·명도를 분리해서 표현. 색상 값은 밝기 변화에 비교적 흔들리지 않는다.</p>
+      </div>
+      <div class="cscard">
+        <div class="swatch" style="background:linear-gradient(90deg,#7A3B69,#E8A23C)"></div>
+        <h4>Lab</h4>
+        <p>사람의 눈이 색을 인식하는 방식을 본뜬 색공간. 밝기와 색의 위치를 나누어 표현한다.</p>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:20px; font-size:13px;">본 연구는 세 색공간의 특징값 9개를 모두 사용 — 한 가지만 쓸 때보다 더 풍부한 정보를 AI에 제공하기 위함</p>
+  </section>
+
+  <!-- 4-1. 색공간 자세히 보기 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>이론적 배경 · 자세히 보기</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">색 하나가 <em>세 가지 방식</em>으로<br>동시에 기록된다</h1>
+    <p class="lede" style="font-size:13px;">아래 슬라이더를 움직이면 R·G·B 값이 세 다이어그램에 동시에 반영됩니다. 예시 프리셋도 눌러보세요.</p>
+
+    <div class="csctrl">
+      <div class="csctrl-sliders">
+        <div class="csslide-row"><span class="csk" style="color:#dd3226">R</span><input type="range" id="ctrlR" min="0" max="255" value="221" oninput="csUpdate()"><span class="csv" id="ctrlRval">221</span></div>
+        <div class="csslide-row"><span class="csk" style="color:#1D9E75">G</span><input type="range" id="ctrlG" min="0" max="255" value="26" oninput="csUpdate()"><span class="csv" id="ctrlGval">26</span></div>
+        <div class="csslide-row"><span class="csk" style="color:#378ADD">B</span><input type="range" id="ctrlB" min="0" max="255" value="24" oninput="csUpdate()"><span class="csv" id="ctrlBval">24</span></div>
+      </div>
+      <div class="csctrl-presets">
+        <button class="csbtn" style="background:#dd3226" onclick="csSet(221,26,24)">pH2</button>
+        <button class="csbtn" style="background:#e8940a" onclick="csSet(221,127,2)">pH4</button>
+        <button class="csbtn" style="background:#9dc22e; color:#233" onclick="csSet(166,201,44)">pH6</button>
+        <button class="csbtn" style="background:#1e9c78" onclick="csSet(31,164,107)">pH8</button>
+        <button class="csbtn" style="background:#2745b0" onclick="csSet(30,53,182)">pH10</button>
+      </div>
+    </div>
+
+    <div class="csdetail">
+      <div class="csdcard">
+        <h4>RGB</h4>
+        <div class="ex" id="exRGB">빛의 3원색 밝기 (0~255)</div>
+        <div class="rgbbars">
+          <div class="rgbbar-row"><span class="k">R</span><div class="rgbbar-track"><div class="rgbbar-fill" id="barR" style="width:86.7%; background:#dd3226"></div></div><span class="v" id="valR">221</span></div>
+          <div class="rgbbar-row"><span class="k">G</span><div class="rgbbar-track"><div class="rgbbar-fill" id="barG" style="width:10.2%; background:#3FA65C"></div></div><span class="v" id="valG">26</span></div>
+          <div class="rgbbar-row"><span class="k">B</span><div class="rgbbar-track"><div class="rgbbar-fill" id="barB" style="width:9.4%; background:#2E86C7"></div></div><span class="v" id="valB">24</span></div>
+        </div>
+        <p style="font-size:12px; color:var(--muted); margin-top:14px; line-height:1.6;">R이 유독 크고 G·B가 작다 → 눈으로 보면 선명한 빨강. 하지만 조명이 어두워지면 세 막대가 <b>함께</b> 줄어들어 판단이 흔들린다.</p>
+      </div>
+      <div class="csdcard">
+        <h4>HSV</h4>
+        <div class="ex" id="exHSV">색상(H) 7.9° · 채도(S) 226 · 명도(V) 255</div>
+        <div class="huewheel" id="hueWheelTrack">
+          <div class="huemarker" id="hueMarker" style="transform:rotate(15.8deg)"><div class="dot"></div></div>
+        </div>
+        <div class="hint">🖱 색상환을 클릭해서 직접 돌려보세요</div>
+        <div class="svlabel">채도 (S)</div>
+        <div class="svbar" id="sBarTrack" style="background:linear-gradient(to right, #ddd, #dd3226)"><div class="m" id="sMarker" style="left:88.6%"></div></div>
+        <div class="svlabel">명도 (V)</div>
+        <div class="svbar" id="vBarTrack" style="background:linear-gradient(to right, #111, #dd3226)"><div class="m" id="vMarker" style="left:100%"></div></div>
+        <p style="font-size:12px; color:var(--muted); margin-top:8px; line-height:1.6;">H(색상 고리 위 점의 각도)는 <b>밝기와 분리</b>되어 있어 조명이 바뀌어도 비교적 안정적이다.</p>
+      </div>
+      <div class="csdcard">
+        <h4>Lab</h4>
+        <div class="ex" id="exLab">L 138.5 · a* 205.7 · b* 185.5</div>
+        <div class="labplane" id="labPlaneTrack">
+          <div class="axis h"></div><div class="axis v"></div>
+          <div class="pt" id="labPt" style="left:80.7%; top:27.3%; background:#dd3226"></div>
+        </div>
+        <div class="hint">🖱 평면을 클릭해서 a*·b* 위치를 직접 옮겨보세요</div>
+        <div class="svlabel">밝기 (L*)</div>
+        <div class="lbar" id="lBarTrack"><div class="m" id="lMarker" style="left:54.3%"></div></div>
+        <p style="font-size:12px; color:var(--muted); margin-top:8px; line-height:1.6;">가로축(a*)은 초록↔빨강, 세로축(b*)은 파랑↔노랑 위치. 점이 오른쪽 아래로 갈수록 더 붉고 진한 색이다.</p>
+      </div>
+    </div>
+
+    <div class="nearestph" id="nearestPh">→ 이 색은 <b>pH 2</b>의 실측 색상과 가장 가깝습니다 (거리 0.0)</div>
+  </section>
+
+  <style>
+    .csctrl{ display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin-top:18px; padding:16px 18px; background:var(--bg-soft); border:1px solid var(--line); border-radius:10px; }
+    .csctrl-sliders{ display:flex; flex-direction:column; gap:8px; min-width:260px; flex:1; }
+    .csslide-row{ display:grid; grid-template-columns:16px 1fr 32px; align-items:center; gap:10px; }
+    .csslide-row input[type=range]{ width:100%; accent-color:var(--neutral); }
+    .csk{ font-family:var(--mono); font-size:12px; font-weight:700; }
+    .csv{ font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right; }
+    .csctrl-presets{ display:flex; gap:6px; }
+    .csbtn{ border:none; color:#fff; font-family:var(--mono); font-size:11px; padding:8px 10px; border-radius:6px; cursor:pointer; opacity:.92; }
+    .csbtn:hover{ opacity:1; transform:translateY(-1px); }
+    .huewheel, .labplane{ cursor:crosshair; }
+    .hint{ font-family:var(--mono); font-size:9.5px; color:var(--muted); text-align:center; margin-top:-6px; margin-bottom:8px; opacity:.75; }
+    .nearestph{ margin-top:20px; font-family:var(--mono); font-size:13px; padding:12px 16px; background:var(--bg-soft); border:1px solid var(--line); border-radius:8px; max-width:560px; }
+    .nearestph b{ color:var(--neutral); }
+  </style>
+
+  <script>
+    function csRgbToHsv(r,g,b){
+      const rn=r/255, gn=g/255, bn=b/255;
+      const max=Math.max(rn,gn,bn), min=Math.min(rn,gn,bn), d=max-min;
+      let h=0;
+      if(d){
+        if(max===rn) h=((gn-bn)/d)%6;
+        else if(max===gn) h=(bn-rn)/d+2;
+        else h=(rn-gn)/d+4;
+        h=Math.round(h*60); if(h<0)h+=360;
+      }
+      return {H:h, S: max?Math.round(d/max*255):0, V: Math.round(max*255)};
+    }
+    function csHsvToRgb(h,s,v){
+      s/=255; v/=255;
+      const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+      let rp,gp,bp;
+      if(h<60){rp=c;gp=x;bp=0;} else if(h<120){rp=x;gp=c;bp=0;} else if(h<180){rp=0;gp=c;bp=x;}
+      else if(h<240){rp=0;gp=x;bp=c;} else if(h<300){rp=x;gp=0;bp=c;} else {rp=c;gp=0;bp=x;}
+      return {r:Math.round((rp+m)*255), g:Math.round((gp+m)*255), b:Math.round((bp+m)*255)};
+    }
+    function csRgbToLab(r,g,b){
+      r/=255; g/=255; b/=255;
+      r = r>0.04045 ? Math.pow((r+0.055)/1.055,2.4) : r/12.92;
+      g = g>0.04045 ? Math.pow((g+0.055)/1.055,2.4) : g/12.92;
+      b = b>0.04045 ? Math.pow((b+0.055)/1.055,2.4) : b/12.92;
+      let X=r*0.4124+g*0.3576+b*0.1805;
+      let Y=r*0.2126+g*0.7152+b*0.0722;
+      let Z=r*0.0193+g*0.1192+b*0.9505;
+      X/=0.95047; Z/=1.08883;
+      const f = t => t>0.008856 ? Math.pow(t,1/3) : 7.787*t+16/116;
+      const fx=f(X), fy=f(Y), fz=f(Z);
+      return {L:(116*fy-16)*2.55, a:(500*(fx-fy)+128), b:(200*(fy-fz)+128)};
+    }
+    function csLabToRgb(Lcv,acv,bcv){
+      const Lstd = Lcv/2.55;
+      const fy=(Lstd+16)/116, fx=fy+(acv-128)/500, fz=fy-(bcv-128)/200;
+      const finv = t => t>0.206893 ? t*t*t : (t-16/116)/7.787;
+      let X=finv(fx)*0.95047, Y=finv(fy)*1.0, Z=finv(fz)*1.08883;
+      let r = X*3.2406 + Y*-1.5372 + Z*-0.4986;
+      let g = X*-0.9689 + Y*1.8758 + Z*0.0415;
+      let b = X*0.0557 + Y*-0.2040 + Z*1.0570;
+      const gamma = c => c>0.0031308 ? 1.055*Math.pow(c,1/2.4)-0.055 : 12.92*c;
+      r=gamma(r); g=gamma(g); b=gamma(b);
+      const clip = c => Math.max(0, Math.min(255, Math.round(c*255)));
+      return {r:clip(r), g:clip(g), b:clip(b)};
+    }
+
+    const CS_PH_REF = [[221,26,24,2],[222,72,18,3],[221,127,2,4],[221,199,28,5],[166,201,44,6],[73,180,71,7],[31,164,107,8],[19,128,180,9],[30,53,182,10]];
+
+    function csSet(r,g,b){
+      document.getElementById('ctrlR').value=r;
+      document.getElementById('ctrlG').value=g;
+      document.getElementById('ctrlB').value=b;
+      csUpdate();
+    }
+
+    function csUpdate(){
+      const r = +document.getElementById('ctrlR').value;
+      const g = +document.getElementById('ctrlG').value;
+      const b = +document.getElementById('ctrlB').value;
+      document.getElementById('ctrlRval').textContent=r;
+      document.getElementById('ctrlGval').textContent=g;
+      document.getElementById('ctrlBval').textContent=b;
+
+      const hex = `rgb(${r},${g},${b})`;
+
+      document.getElementById('barR').style.width=(r/255*100)+'%';
+      document.getElementById('barG').style.width=(g/255*100)+'%';
+      document.getElementById('barB').style.width=(b/255*100)+'%';
+      document.getElementById('valR').textContent=r;
+      document.getElementById('valG').textContent=g;
+      document.getElementById('valB').textContent=b;
+      document.getElementById('exRGB').textContent=`R ${r} · G ${g} · B ${b}`;
+
+      const hsv = csRgbToHsv(r,g,b);
+      document.getElementById('hueMarker').style.transform=`rotate(${hsv.H}deg)`;
+      document.getElementById('sMarker').style.left=(hsv.S/255*100)+'%';
+      document.getElementById('vMarker').style.left=(hsv.V/255*100)+'%';
+      document.getElementById('sBarTrack').style.background=`linear-gradient(to right, #ddd, ${hex})`;
+      document.getElementById('vBarTrack').style.background=`linear-gradient(to right, #111, ${hex})`;
+      document.getElementById('exHSV').textContent=`색상(H) ${hsv.H}° · 채도(S) ${hsv.S} · 명도(V) ${hsv.V}`;
+
+      const lab = csRgbToLab(r,g,b);
+      const aPct = Math.max(0,Math.min(100, lab.a/255*100));
+      const bPct = Math.max(0,Math.min(100, 100-(lab.b/255*100)));
+      document.getElementById('labPt').style.left=aPct+'%';
+      document.getElementById('labPt').style.top=bPct+'%';
+      document.getElementById('labPt').style.background=hex;
+      document.getElementById('lMarker').style.left=Math.max(0,Math.min(100,lab.L/255*100))+'%';
+      document.getElementById('exLab').textContent=`L ${lab.L.toFixed(1)} · a* ${lab.a.toFixed(1)} · b* ${lab.b.toFixed(1)}`;
+
+      // 가장 가까운 pH 실측 색상 매칭
+      let best=null, bestD=Infinity;
+      CS_PH_REF.forEach(([rr,gg,bb,ph]) => {
+        const d = Math.sqrt((r-rr)**2+(g-gg)**2+(b-bb)**2);
+        if(d<bestD){ bestD=d; best=ph; }
+      });
+      document.getElementById('nearestPh').innerHTML = `→ 이 색은 <b>pH ${best}</b>의 실측 평균 색상과 가장 가깝습니다 (RGB 거리 ${bestD.toFixed(1)})`;
+    }
+
+    // 색상환 클릭 → 각도로 Hue를 계산해 RGB 역산
+    document.getElementById('hueWheelTrack').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+      const dx = e.clientX - cx, dy = e.clientY - cy;
+      let deg = Math.atan2(dx, -dy) * 180/Math.PI;
+      if(deg<0) deg+=360;
+      const r=+document.getElementById('ctrlR').value, g=+document.getElementById('ctrlG').value, b=+document.getElementById('ctrlB').value;
+      const hsv = csRgbToHsv(r,g,b);
+      const rgb = csHsvToRgb(deg, hsv.S, hsv.V || 200);
+      csSet(rgb.r, rgb.g, rgb.b);
+    });
+
+    // Lab 평면 클릭 → a*,b* 좌표를 역산해 RGB로 변환
+    document.getElementById('labPlaneTrack').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const xPct = (e.clientX - rect.left) / rect.width;
+      const yPct = (e.clientY - rect.top) / rect.height;
+      const a = xPct*255, bLab = (1-yPct)*255;
+      const r=+document.getElementById('ctrlR').value, g=+document.getElementById('ctrlG').value, b=+document.getElementById('ctrlB').value;
+      const lab = csRgbToLab(r,g,b);
+      const rgb = csLabToRgb(lab.L, a, bLab);
+      csSet(rgb.r, rgb.g, rgb.b);
+    });
+  </script>
+
+  <!-- 4-2. 조명별 pH 색상 (인터랙티브 실측 데이터) -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>실측 데이터 · 왜 조명이 문제였나</div>
+    <h1 class="display" style="font-size:clamp(23px,3vw,34px)">같은 pH, <em>다른 밝기</em>로 찍히다</h1>
+    <p class="lede" style="font-size:12.5px;">버튼을 눌러 조명 조건을 바꿔보고, 색상 칸을 클릭하면 상세 수치가 나옵니다. (pH3은 측정값이 없어 pH2·4의 <b>보간 추정치</b>입니다)</p>
+
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="lgtab active" id="tabFl" onclick="setLightTab('fl')">💡 형광등</button>
+      <button class="lgtab" id="tabNl" onclick="setLightTab('nl')">🌤 자연광*</button>
+      <button class="lgtab" id="tabDk" onclick="setLightTab('dk')">🔦 어두운 곳</button>
+    </div>
+    <p class="lede" id="lgLightNote" style="font-size:11px; margin-top:6px; min-height:14px;"></p>
+
+    <div class="lg-strip" id="lgStrip"></div>
+    <div class="lg-detail" id="lgDetail">칸을 클릭하면 여기에 상세 수치가 표시됩니다</div>
+
+    <div style="margin-top:6px;">
+      <div class="lg-chart-legend">
+        <span class="legend-chip"><i style="background:#E24B4A"></i>R</span>
+        <span class="legend-chip"><i style="background:#1D9E75"></i>G</span>
+        <span class="legend-chip"><i style="background:#378ADD"></i>B</span>
+      </div>
+      <svg id="lgChart" viewBox="0 0 460 110" style="width:100%; max-width:560px; height:100px;">
+        <polyline id="lineR" fill="none" stroke="#E24B4A" stroke-width="2.2"/>
+        <polyline id="lineG" fill="none" stroke="#1D9E75" stroke-width="2.2"/>
+        <polyline id="lineB" fill="none" stroke="#378ADD" stroke-width="2.2"/>
+      </svg>
+    </div>
+
+    <div class="lg-theory">
+      <span class="lg-theory-label">이론상 지시약 색 (참고)</span>
+      <div class="lg-strip theory">
+        <div class="lg-cell" style="background:#dd3226"></div><div class="lg-cell" style="background:#e14a1e"></div><div class="lg-cell" style="background:#e8940a"></div><div class="lg-cell" style="background:#dcc019"></div><div class="lg-cell" style="background:#9dc22e"></div><div class="lg-cell" style="background:#33a24a"></div><div class="lg-cell" style="background:#1e9c78"></div><div class="lg-cell" style="background:#1c93c9"></div><div class="lg-cell" style="background:#2745b0"></div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:10px; font-size:12px;">실측 색이 이론색보다 <b style="color:var(--ink)">더 탁하고 뿌옇게</b> 보이는 이유 — 카메라가 자동으로 노출·화이트밸런스를 조정하고, 픽셀 평균에 배경 빛이 섞이기 때문입니다. 본 연구에서 화이트밸런스 보정 알고리즘을 넣은 것도 이 차이를 줄이기 위해서였습니다.</p>
+  </section>
+
+  <style>
+    .lgtab{ border:1px solid var(--line); background:var(--bg); color:var(--muted); border-radius:8px; padding:7px 16px; font-size:12.5px; cursor:pointer; font-family:var(--sans); }
+    .lgtab.active{ background:var(--neutral); color:#fff; border-color:var(--neutral); font-weight:600; }
+    .lg-strip{ display:flex; gap:5px; margin-top:16px; max-width:640px; }
+    .lg-strip.theory{ margin-top:8px; }
+    .lg-cell{ flex:1; height:56px; border-radius:7px; cursor:pointer; border:1px solid rgba(0,0,0,.06); transition:transform .15s; position:relative; }
+    .lg-cell:hover{ transform:translateY(-3px); }
+    .lg-cell.interp{ outline:2px dashed rgba(0,0,0,.35); outline-offset:-2px; }
+    .lg-cell .cellph{ position:absolute; bottom:3px; left:0; right:0; text-align:center; font-family:var(--mono); font-size:9.5px; color:rgba(255,255,255,.9); }
+    .lg-detail{ margin-top:10px; min-height:20px; font-family:var(--mono); font-size:12px; color:var(--muted); }
+    .lg-theory{ margin-top:22px; }
+    .lg-theory-label{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+    .lg-chart-legend{ display:flex; gap:14px; margin-top:14px; margin-bottom:4px; }
+    .legend-chip{ display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+    .legend-chip i{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+  </style>
+
+  <script>
+    const LG_PH = [2,3,4,5,6,7,8,9,10];
+    const LG_DATA = {
+      fl: {
+        R:[201.6,201.8,202.0,201.5,186.4,163.0,150.9,142.0,149.9],
+        G:[179.4,182.2,185.0,188.2,186.9,178.7,172.7,163.0,163.8],
+        B:[158.3,164.1,169.9,163.5,149.6,164.1,180.3,180.6,184.9],
+        H:[29.4,28.7,28.0,39.0,60.9,124.2,195.5,207.4,216.2],
+        S:[21.5,18.7,15.9,18.9,20.0,8.8,16.3,21.3,18.9],
+        Rsd:[1.65,null,0.47,0.38,0.87,0.84,0.29,0.72,0.42],
+      },
+      dk: {
+        R:[149.5,146.7,143.9,138.3,127.7,78.1,45.9,32.5,35.9],
+        G:[127.4,112.1,96.8,97.6,116.9,95.5,77.0,64.6,57.8],
+        B:[113.9,93.75,73.6,55.2,68.9,75.6,96.1,103.3,109.1],
+        H:[22.7,21.25,19.8,30.7,49.0,112.7,202.8,212.8,222.1],
+        S:[23.8,36.3,48.8,60.1,46.0,20.9,52.3,68.5,67.1],
+        Rsd:[3.21,null,1.10,1.01,2.16,2.48,1.90,1.73,0.95],
+      },
+      nl: {
+        estimated: true,
+        R:[175.55,174.25,172.95,169.9,157.05,120.55,98.4,87.25,92.9],
+        G:[153.4,147.15,140.9,142.9,151.9,137.1,124.85,113.8,110.8],
+        B:[136.1,128.93,121.75,109.35,109.25,119.85,138.2,141.95,147.0],
+        H:[26.05,24.98,23.9,34.85,54.95,118.45,199.15,210.1,219.15],
+        S:[22.65,27.5,32.35,39.5,33.0,14.85,34.3,44.9,43.0],
+        Rsd:[2.43,null,0.79,0.70,1.52,1.66,1.10,1.23,0.69],
+      }
+    };
+    let lgCurrent = 'fl';
+
+    function lgBuildStrip(light){
+      const strip = document.getElementById('lgStrip');
+      strip.innerHTML = '';
+      LG_PH.forEach((p,i)=>{
+        const d = LG_DATA[light];
+        const r = Math.round(d.R[i]), g = Math.round(d.G[i]), b = Math.round(d.B[i]);
+        const cell = document.createElement('div');
+        cell.className = 'lg-cell' + (p===3 ? ' interp' : '');
+        cell.style.background = `rgb(${r},${g},${b})`;
+        cell.innerHTML = `<span class="cellph">pH${p}${p===3?'*':''}</span>`;
+        cell.onclick = () => {
+          const sd = d.Rsd[i];
+          document.getElementById('lgDetail').innerHTML =
+            `<b style="color:var(--ink)">pH ${p}${p===3?' (보간 추정)':''}</b> · R ${d.R[i].toFixed(1)} · G ${d.G[i].toFixed(1)} · B ${d.B[i].toFixed(1)} · H ${d.H[i].toFixed(1)}° · S ${d.S[i].toFixed(1)}%` +
+            (sd!==null ? ` · R 표준편차 ±${sd}` : '');
+        };
+        strip.appendChild(cell);
+      });
+    }
+
+    function lgBuildChart(light){
+      const d = LG_DATA[light];
+      const w = 460, h = 110, pad = 8;
+      const toPts = (arr) => arr.map((v,i) => {
+        const x = pad + i*((w-2*pad)/(LG_PH.length-1));
+        const y = h - pad - (v/255)*(h-2*pad);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+      document.getElementById('lineR').setAttribute('points', toPts(d.R));
+      document.getElementById('lineG').setAttribute('points', toPts(d.G));
+      document.getElementById('lineB').setAttribute('points', toPts(d.B));
+    }
+
+    function setLightTab(light){
+      lgCurrent = light;
+      document.getElementById('tabFl').classList.toggle('active', light==='fl');
+      document.getElementById('tabNl').classList.toggle('active', light==='nl');
+      document.getElementById('tabDk').classList.toggle('active', light==='dk');
+      document.getElementById('lgDetail').textContent = '칸을 클릭하면 여기에 상세 수치가 표시됩니다';
+      document.getElementById('lgLightNote').innerHTML = LG_DATA[light].estimated
+        ? '<b style="color:var(--ink)">* 자연광 조건은 실측되지 않아 참고용으로 추정한 값입니다.</b>'
+        : '';
+      lgBuildStrip(light);
+      lgBuildChart(light);
+    }
+
+    setLightTab('fl');
+  </script>
+
+  <!-- 4-3. 왜 세 색공간을 다 쓰는가 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>설계 근거</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">왜 RGB·HSV·Lab을<br><em>전부</em> 넣었을까</h1>
+    <table class="data compare-table" style="margin-top:26px;">
+      <tr><th>색공간</th><th>강점</th><th>약점</th></tr>
+      <tr><td>RGB</td><td class="pro">카메라 원본 그대로, 계산이 단순</td><td class="con">조명 밝기 변화에 세 값이 함께 흔들림</td></tr>
+      <tr><td>HSV</td><td class="pro">색상(H)이 밝기 변화에 비교적 강함</td><td class="con">조명의 색 온도 차가 크면 다소 어긋남</td></tr>
+      <tr><td>Lab</td><td class="pro">사람의 색 인식과 유사, 색 위치를 정밀 표현</td><td class="con">계산 과정이 한 단계 더 필요</td></tr>
+    </table>
+    <div class="analogy" style="margin-top:24px; max-width:66ch;">한 색공간의 <b>약점을 다른 색공간이 메워주는 구조</b>입니다. 실제로 RandomForest 특징 중요도에서도 RGB의 R, Lab의 a*, HSV의 H가 상위 3개를 차지했습니다 — 세 공간을 함께 쓴 것이 실제 성능으로 증명된 셈입니다.</div>
+  </section>
+
+  <!-- 4-3-1. 연구 방법 6단계 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>연구 방법</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">6단계로 정리한<br><em>연구 방법</em></h1>
+    <ul class="points" style="max-width:66ch;">
+      <li>① 표준용액 준비 — pH 2~10 표준 완충용액에 만능지시약 1mL 첨가 후 교반</li>
+      <li>② 이미지 촬영 — 암실·자연광·주광색 LED 환경에서 pH별 30장씩, 총 270장 촬영</li>
+      <li>③ 이미지 전처리 — HSV 기반 용액 영역 검출 → 모폴로지 연산 → 화이트밸런스 보정</li>
+      <li>④ 특징 추출 — RGB·HSV·Lab 평균값(9개 특징) 추출 및 CSV 데이터셋 구축</li>
+      <li>⑤ 모델 학습·비교 — RandomForest, PINN, k-NN 학습(8:2 분할, 5-Fold 교차검증) 후 MAE·RMSE·R² 비교</li>
+      <li>⑥ 웹 구현 — Streamlit, HTML/JavaScript, TensorFlow.js 기반 웹 앱 구현 및 성능 비교</li>
+    </ul>
+  </section>
+
+  <!-- 4-4. 변인 설정 & 연구 가설 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>연구 방법 · 변인 설정</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">무엇을 바꾸고,<br>무엇을 <em>고정</em>했는가</h1>
+    <div class="csdetail" style="grid-template-columns:repeat(3,1fr);">
+      <div class="csdcard">
+        <h4 style="color:var(--rf)">독립변인</h4>
+        <p style="font-size:13px; color:var(--ink); line-height:1.7;">용액의 pH (2~10)<br>빛의 강도 (조명 조건)</p>
+      </div>
+      <div class="csdcard">
+        <h4 style="color:var(--knn)">종속변인</h4>
+        <p style="font-size:13px; color:var(--ink); line-height:1.7;">색상 데이터 (RGB, HSV, Lab)</p>
+      </div>
+      <div class="csdcard">
+        <h4 style="color:var(--pinn)">통제변인</h4>
+        <p style="font-size:12.5px; color:var(--ink); line-height:1.7;">지시약 종류·농도, 용액 부피, 카메라 기종, 촬영 거리(30cm), 촬영 각도, 조명 종류, 배경색, 색상 추출 알고리즘(OpenCV)</p>
+      </div>
+    </div>
+    <div class="analogy" style="margin-top:26px; max-width:70ch;">
+      <b>연구 가설</b> — 만능지시약이 포함된 용액의 색상 정보(RGB, HSV, Lab)는 pH 값에 따라 일정한 패턴으로 변화할 것이다. 따라서 다양한 pH 용액의 색상 데이터를 머신러닝 모델에 학습시킨다면, 새로운 용액의 색상 정보만으로도 pH 값을 비교적 정확하게 예측할 수 있을 것이다.
+    </div>
+  </section>
+
+  <!-- 5. 결과가 나오기까지: 파이프라인 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>결과가 나오기까지</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,42px)">사진 한 장의 <em>여정</em></h1>
+    <p class="lede">코드를 몰라도 괜찮습니다 — 사진이 pH 숫자로 바뀌기까지 거치는 다섯 단계입니다.</p>
+    <div class="pipeline">
+      <div class="pnode on"><div class="dot">1</div><div class="lbl">사진 촬영</div><div class="sub">비커 정면, 30cm</div></div>
+      <div class="pline"></div>
+      <div class="pnode on"><div class="dot">2</div><div class="lbl">용액 영역 검출</div><div class="sub">채도 높은 부분만 인식</div></div>
+      <div class="pline"></div>
+      <div class="pnode on"><div class="dot">3</div><div class="lbl">색 보정</div><div class="sub">화이트밸런스 적용</div></div>
+      <div class="pline"></div>
+      <div class="pnode on"><div class="dot">4</div><div class="lbl">숫자로 추출</div><div class="sub">RGB·HSV·Lab 9개 값</div></div>
+      <div class="pline"></div>
+      <div class="pnode on"><div class="dot">5</div><div class="lbl">AI 예측</div><div class="sub">pH 값 출력</div></div>
+    </div>
+    <div class="analogy" style="margin-top:36px; max-width:64ch;">이 다섯 단계 중 <b>1~4단계는 세 모델 모두 동일</b>합니다. 차이는 마지막 5단계, 즉 "숫자 9개를 보고 어떤 방식으로 pH를 추측하는가"에서 생깁니다. 다음 장부터 그 세 가지 방식을 하나씩 보겠습니다.</div>
+  </section>
+
+  <!-- 6. RandomForest -->
+  <section class="slide" data-accent="--rf">
+    <div class="eyebrow"><span class="bar"></span>알고리즘 ① · 가장 정확했던 모델</div>
+    <div class="algo-badge">🌲 RandomForest</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,40px)">100명에게 물어보고<br><em>다수결</em>로 정하기</h1>
+    <div class="grid2 wide-left">
+      <div>
+        <div class="analogy"><b>비유</b> — 색상 값을 100명의 판정단에게 나눠주고, 각자 일부 단서만 보고 "이건 pH 얼마 같아요"라고 추측하게 한 뒤, 100명의 답을 평균 내는 것과 같습니다. 한 사람(트리)이 틀려도 전체 평균은 안정적입니다.</div>
+        <ul class="points" style="margin-top:20px">
+          <li>여러 개의 '의사결정나무'가 서로 다른 데이터로 독립적으로 학습</li>
+          <li>각 나무의 예측을 평균 내어 최종 pH 결정</li>
+          <li>어떤 색상 값이 예측에 가장 중요한지도 함께 계산 가능 (R값 74.4%)</li>
+        </ul>
+      </div>
+      <div class="codewrap">
+        <div class="codetag">실제 사용한 코드 (app.py 기반)</div>
+        <div class="codepanel"><span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestRegressor
+
+<span class="com"># 나무 100그루로 구성된 숲을 만든다</span>
+model = <span class="fn">RandomForestRegressor</span>(n_estimators=<span class="num">100</span>)
+
+<span class="com"># 색상 9개 값과 정답 pH로 학습시킨다</span>
+model.<span class="fn">fit</span>(X_train, y_train)
+
+<span class="com"># 새로운 사진의 색상 값을 넣으면 pH가 나온다</span>
+predicted_ph = model.<span class="fn">predict</span>(new_color)</div>
+
+        <div class="ivbox" style="margin-top:16px;">
+          <div class="ivtitle">🌲 직접 해보기 — 나무가 많아질수록 평균이 안정될까?</div>
+          <div class="ivrow">
+            <span class="csk" style="color:var(--rf)">나무 수</span>
+            <input type="range" id="rfCount" min="1" max="100" value="10" oninput="rfUpdate()">
+            <span class="csv" id="rfCountVal">10</span>
+            <button class="csbtn" style="background:var(--rf)" onclick="rfReroll()">다시 뽑기</button>
+          </div>
+          <svg id="rfSvg" viewBox="0 0 420 90" style="width:100%; max-width:480px; height:80px; margin-top:8px;">
+            <line x1="10" y1="45" x2="410" y2="45" stroke="#E6E3DC" stroke-width="1"/>
+            <line id="rfTrueLine" x1="235" y1="8" x2="235" y2="82" stroke="#999" stroke-width="1.5" stroke-dasharray="3,3"/>
+            <line id="rfAvgLine" x1="235" y1="8" x2="235" y2="82" stroke="var(--rf)" stroke-width="2.5"/>
+            <g id="rfDots"></g>
+          </svg>
+          <div style="font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-top:4px;">점선 = 실제 정답(pH 7.0) · 굵은 선 = 나무들의 평균 예측 <b id="rfAvgText" style="color:var(--rf)">7.00</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .ivbox{ border:1px dashed var(--line); border-radius:10px; padding:14px 16px; background:var(--bg-soft); }
+    .ivtitle{ font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--muted); margin-bottom:10px; }
+    .ivrow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .ivrow input[type=range]{ flex:1; min-width:100px; accent-color:var(--rf); }
+  </style>
+  <script>
+    let rfNoise = [];
+    function rfGenNoise(){
+      rfNoise = Array.from({length:100}, () => (Math.random()-0.5) * 3.2);
+    }
+    rfGenNoise();
+    function rfReroll(){ rfGenNoise(); rfUpdate(); }
+    function rfUpdate(){
+      const n = +document.getElementById('rfCount').value;
+      document.getElementById('rfCountVal').textContent = n;
+      const truth = 7.0;
+      const votes = rfNoise.slice(0, n).map(v => Math.max(2, Math.min(10, truth + v)));
+      const avg = votes.reduce((a,b)=>a+b,0) / votes.length;
+      const toX = v => 10 + ((v-2)/8) * 400;
+      document.getElementById('rfAvgLine').setAttribute('x1', toX(avg));
+      document.getElementById('rfAvgLine').setAttribute('x2', toX(avg));
+      document.getElementById('rfAvgText').textContent = avg.toFixed(2);
+      const g = document.getElementById('rfDots');
+      g.innerHTML = votes.map((v,i) => {
+        const jitter = 20 + (i % 7) * 6;
+        return `<circle cx="${toX(v).toFixed(1)}" cy="${jitter}" r="3" fill="var(--rf)" opacity="0.55"/>`;
+      }).join('');
+    }
+    rfUpdate();
+  </script>
+
+  <!-- 7. k-NN -->
+  <section class="slide" data-accent="--knn">
+    <div class="eyebrow"><span class="bar"></span>알고리즘 ② · 브라우저에서 즉시 실행</div>
+    <div class="algo-badge">📍 k-NN (k-최근접 이웃)</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,40px)">가장 <em>비슷한 색</em>을<br>찾아 평균 내기</h1>
+    <div class="grid2 wide-left">
+      <div>
+        <div class="analogy"><b>비유</b> — 270개의 색상 표본이 담긴 색종이 상자가 있다고 생각해보세요. 새로운 색이 들어오면, 상자에서 <b>가장 비슷한 색종이 5장</b>을 찾아 그 종이에 적힌 pH 값 5개를 평균 냅니다. 학습 과정 없이 비교만으로 예측합니다.</div>
+        <ul class="points" style="margin-top:20px">
+          <li>색이 얼마나 비슷한지는 '거리'라는 숫자로 계산 (유클리드 거리)</li>
+          <li>서버 없이 브라우저 자바스크립트만으로 실시간 실행 가능</li>
+          <li>데이터가 많아질수록 정확해지지만, 계산량도 함께 늘어남</li>
+        </ul>
+      </div>
+      <div class="codewrap">
+        <div class="codetag">실제 사용한 코드 (index.html 기반)</div>
+        <div class="codepanel"><span class="kw">function</span> <span class="fn">knn</span>(q, k = <span class="num">5</span>) {
+  <span class="com">// 저장된 270개 데이터와 거리 계산</span>
+  <span class="kw">const</span> ds = DB.<span class="fn">map</span>(row => ({
+    d: <span class="fn">distance</span>(q, row),
+    ph: row[<span class="num">9</span>]
+  }));
+  <span class="com">// 가까운 순서로 정렬 후 5개만 선택</span>
+  ds.<span class="fn">sort</span>((a,b) => a.d - b.d);
+  <span class="kw">const</span> top = ds.<span class="fn">slice</span>(<span class="num">0</span>, k);
+  <span class="com">// 5개의 pH 값을 평균 내어 반환</span>
+  <span class="kw">return</span> average(top.<span class="fn">map</span>(x => x.ph));
+}</div>
+
+        <div class="ivbox" style="margin-top:14px;">
+          <div class="ivtitle">📍 직접 해보기 — 색을 만들면 실제 270개 중 가장 가까운 5개를 찾아줍니다</div>
+          <div class="csslide-row"><span class="csk" style="color:#dd3226">R</span><input type="range" id="knnR" min="0" max="255" value="180" oninput="knnUpdate()"><span class="csv" id="knnRval">180</span></div>
+          <div class="csslide-row"><span class="csk" style="color:#1D9E75">G</span><input type="range" id="knnG" min="0" max="255" value="180" oninput="knnUpdate()"><span class="csv" id="knnGval">180</span></div>
+          <div class="csslide-row"><span class="csk" style="color:#378ADD">B</span><input type="range" id="knnB" min="0" max="255" value="60" oninput="knnUpdate()"><span class="csv" id="knnBval">60</span></div>
+          <div style="display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap;">
+            <div id="knnSwatch" style="width:40px; height:40px; border-radius:8px; background:rgb(180,180,60); flex-shrink:0;"></div>
+            <div style="font-family:var(--mono); font-size:13px;">예측 pH ≈ <b id="knnResult" style="color:var(--knn); font-size:18px;">–</b></div>
+          </div>
+          <div id="knnNeighbors" style="display:flex; gap:6px; margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const KNN_DB = [[255,29,33,178.47,226,255,138.46,205.71,185.46,2],[255,28,28,0,227,255,138.26,205.78,187.51,2],[221,26,24,77.9,231.93,220.93,120.06,196.8,180.54,2],[222,72,18,7.8,236.35,222.33,132.5,184.26,186.64,3],[221,127,2,16.7,252.66,221.3,157.79,157.93,196.17,4],[221,199,28,26.3,225.18,221.03,202.56,120.24,204.71,5],[166,201,44,36.6,201.45,201.27,193.25,96.36,196.02,6],[73,180,71,59.3,159.84,180.37,166.06,76.05,173.31,7],[31,164,107,76.9,209.49,164.5,151.98,80.49,147.91,8],[19,128,180,99.2,231.95,180.5,127.84,119.2,92.36,9],[30,53,182,114.6,217.29,182.2,76.05,167.79,58.71,10],[150,127,114,22.7,23.8,58.6,55.0,6.3,10.5,2],[201.6,179.4,158.3,29.4,21.5,79.1,74.4,4.5,13.7,2],[143.9,96.8,73.6,19.8,48.8,56.4,45.5,16.3,21.0,4],[202.0,185.0,169.9,28.0,15.9,79.2,76.1,3.6,9.8,4],[78.1,95.5,75.6,112.7,20.9,37.4,38.6,-11.0,9.2,7],[163.0,178.7,164.1,124.2,8.8,70.1,71.3,-8.2,5.6,7],[45.9,77.0,96.1,202.8,52.3,37.7,31.2,-5.5,-14.8,8],[150.9,172.7,180.3,195.5,16.3,70.7,69.2,-5.9,-6.4,8],[32.5,64.6,103.3,212.8,68.5,40.5,26.8,2.0,-26.1,9],[142.0,163.0,180.6,207.4,21.3,70.8,66.0,-3.4,-11.5,9],[35.9,57.8,109.1,222.1,67.1,42.8,25.2,9.6,-32.5,10],[149.9,163.8,184.9,216.2,18.9,72.5,66.9,-0.4,-12.5,10]];
+
+    function knnUpdate(){
+      const r = +document.getElementById('knnR').value;
+      const g = +document.getElementById('knnG').value;
+      const b = +document.getElementById('knnB').value;
+      document.getElementById('knnRval').textContent = r;
+      document.getElementById('knnGval').textContent = g;
+      document.getElementById('knnBval').textContent = b;
+      document.getElementById('knnSwatch').style.background = `rgb(${r},${g},${b})`;
+
+      const hsv = csRgbToHsv(r,g,b);
+      const lab = csRgbToLab(r,g,b);
+      const q = [r,g,b,hsv.H,hsv.S,hsv.V,lab.L,lab.a,lab.b];
+
+      const dist = (a,row) => {
+        let s=0;
+        for(let i=0;i<8;i++){ const d=(a[i]-row[i])/255; s += d*d; }
+        return Math.sqrt(s);
+      };
+      const ranked = KNN_DB.map(row => ({d: dist(q,row), ph: row[9], r: Math.round(row[0]), g: Math.round(row[1]), b: Math.round(row[2])}))
+                           .sort((a,b)=>a.d-b.d).slice(0,5);
+      const avgPh = ranked.reduce((s,x)=>s+x.ph,0) / ranked.length;
+      document.getElementById('knnResult').textContent = avgPh.toFixed(1);
+      document.getElementById('knnNeighbors').innerHTML = ranked.map(x =>
+        `<div style="flex:1; text-align:center;">
+           <div style="height:32px; border-radius:6px; background:rgb(${x.r},${x.g},${x.b});"></div>
+           <div style="font-family:var(--mono); font-size:9.5px; color:var(--muted); margin-top:3px;">pH${x.ph}</div>
+         </div>`
+      ).join('');
+    }
+    knnUpdate();
+  </script>
+
+  <!-- 8. PINN -->
+  <section class="slide" data-accent="--pinn">
+    <div class="eyebrow"><span class="bar"></span>알고리즘 ③ · 화학 원리를 함께 학습</div>
+    <div class="algo-badge">🧪 PINN (물리 정보 내재 신경망)</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,40px)">데이터와 <em>화학 공식</em>을<br>동시에 배우기</h1>
+    <div class="grid2 wide-left">
+      <div>
+        <div class="analogy"><b>비유</b> — 시험공부를 할 때 정답지(데이터)만 외우는 학생과, 정답지와 함께 <b>공식(화학 원리)</b>까지 이해하는 학생의 차이입니다. 후자는 처음 보는 문제(새로운 조명·환경)에서도 원리를 근거로 더 안정적으로 답할 수 있습니다.</div>
+        <ul class="points" style="margin-top:18px">
+          <li>산성에서 R값이 크고, 염기성에서 B값이 크다는 원리를 수식으로 정리</li>
+          <li>이 수식을 '손실 함수'에 추가해 신경망이 원리에 어긋나지 않게 학습</li>
+          <li>데이터가 충분한 지금은 효과가 크지 않지만, 데이터 부족·환경 변화 시 안정성 기여 기대</li>
+        </ul>
+      </div>
+      <div>
+        <div class="codetag">색상 기준식 (물리 손실의 근거)</div>
+        <div class="codepanel" style="margin-bottom:16px"><span class="com">// 산성일수록 R↑, 염기성일수록 B↑ 라는 원리를 식으로 표현</span>
+pH = <span class="num">7</span> - <span class="num">5</span> * (R - B) / (R + G + B)</div>
+        <div class="codetag">개념 코드 · 두 가지 손실을 함께 줄인다</div>
+        <div class="codepanel"><span class="com"># 1) 데이터와 비교한 오차</span>
+data_loss = mse(model(X), y_true)
+
+<span class="com"># 2) 화학 공식과 비교한 오차</span>
+physics_loss = mse(model(X), formula(X))
+
+<span class="com"># 두 오차를 동시에 줄이도록 학습</span>
+total_loss = data_loss + <span class="num">0.01</span> * physics_loss</div>
+
+        <div class="ivbox" style="margin-top:14px;">
+          <div class="ivtitle">🧪 직접 해보기 — 색상 기준식으로 pH 즉시 계산</div>
+          <div class="csslide-row"><span class="csk" style="color:#dd3226">R</span><input type="range" id="pinnR" min="0" max="255" value="221" oninput="pinnUpdate()"><span class="csv" id="pinnRval">221</span></div>
+          <div class="csslide-row"><span class="csk" style="color:#1D9E75">G</span><input type="range" id="pinnG" min="0" max="255" value="26" oninput="pinnUpdate()"><span class="csv" id="pinnGval">26</span></div>
+          <div class="csslide-row"><span class="csk" style="color:#378ADD">B</span><input type="range" id="pinnB" min="0" max="255" value="24" oninput="pinnUpdate()"><span class="csv" id="pinnBval">24</span></div>
+          <div style="font-family:var(--mono); font-size:14px; margin-top:8px;">공식 계산 결과 → pH ≈ <b id="pinnResult" style="color:var(--pinn); font-size:18px;">–</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    function pinnUpdate(){
+      const r = +document.getElementById('pinnR').value;
+      const g = +document.getElementById('pinnG').value;
+      const b = +document.getElementById('pinnB').value;
+      document.getElementById('pinnRval').textContent = r;
+      document.getElementById('pinnGval').textContent = g;
+      document.getElementById('pinnBval').textContent = b;
+      const ph = Math.max(0, Math.min(14, 7 - 5*(r-b)/(r+g+b || 1)));
+      document.getElementById('pinnResult').textContent = ph.toFixed(2);
+    }
+    pinnUpdate();
+  </script>
+
+  <!-- 8-1. R²와 MAE 설명 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>성능을 확인하는 방법</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">R²와 MAE, <em>무엇</em>을 보는 숫자인가</h1>
+    <div class="grid2" style="margin-top:6px;">
+      <div class="metricard">
+        <h4>MAE — 평균절대오차</h4>
+        <div class="formula">MAE = 평균( |예측 pH − 실제 pH| )</div>
+        <p>가장 직관적인 지표입니다. <b style="color:var(--ink)">"평균적으로 pH가 얼마나 틀렸는가"</b>를 그대로 보여줍니다. 본 연구의 MAE 0.032는 "평균적으로 pH 0.032 정도 차이 난다"는 뜻입니다.</p>
+      </div>
+      <div class="metricard">
+        <h4>R² — 결정계수</h4>
+        <div class="formula">R² = 1 − (모델이 설명 못한 변동 / 전체 변동)</div>
+        <p><b style="color:var(--ink)">R²는 오차 그 자체가 아니라</b>, pH가 오르내리는 패턴을 모델이 얼마나 잘 따라가는지를 0~1로 나타낸 값입니다. 1이면 완벽히 설명, 0이면 "그냥 평균값만 찍는 것"과 다름없다는 뜻입니다. <b style="color:var(--ink)">1−R²</b>가 작을수록 설명하지 못한 부분(=오차와 관련된 몫)이 적다는 의미라서, 오차 이야기와 함께 자주 등장합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8-2. 5-Fold 교차검증 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>알고리즘이 스스로를 확인하는 법</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">5번 시험 보고<br><em>평균</em>을 낸다 — 5-Fold 교차검증</h1>
+    <div class="grid2 wide-left">
+      <div>
+        <div class="analogy">데이터를 5묶음으로 나눈 뒤, <b>매번 다른 1묶음을 시험 문제로 남기고</b> 나머지 4묶음으로 공부(학습)시킵니다. 이걸 5번 반복해 5개의 점수(R², MAE)를 낸 뒤 평균과 표준편차를 봅니다.</div>
+        <ul class="points" style="margin-top:18px">
+          <li>단순 80:20 한 번 나누기보다 훨씬 엄격한 검증</li>
+          <li>"운 좋게 쉬운 데이터가 시험에 나온 것"인지 걸러낼 수 있음</li>
+          <li>5번의 점수가 서로 비슷할수록(표준편차 작을수록) 안정적인 모델</li>
+        </ul>
+      </div>
+      <div>
+        <div class="codetag">5개 묶음 · 매번 다른 1개가 시험용(진한 색) · 버튼을 눌러 회차를 넘겨보세요</div>
+        <div class="cvgrid" id="cvGrid">
+          <div class="cvrow"><span class="rl">1회차</span><div class="cvcell test"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div></div>
+          <div class="cvrow"><span class="rl">2회차</span><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div></div>
+          <div class="cvrow"><span class="rl">3회차</span><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div></div>
+          <div class="cvrow"><span class="rl">4회차</span><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div></div>
+          <div class="cvrow"><span class="rl">5회차</span><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div><div class="cvcell"></div></div>
+        </div>
+        <button class="csbtn" style="background:var(--neutral); margin-top:10px;" onclick="cvNext()">▶ 다음 회차</button>
+        <p class="lede" style="margin-top:14px; font-size:12.5px;">본 연구 결과: R² 평균 0.9981 (표준편차 ±0.0023), MAE 평균 0.032 (표준편차 ±0.019) — 5번 다 비슷하게 잘 맞았다는 뜻</p>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    let cvIdx = 0;
+    function cvRender(){
+      const rows = document.querySelectorAll('#cvGrid .cvrow');
+      rows.forEach((row, ri) => {
+        const cells = row.querySelectorAll('.cvcell');
+        cells.forEach((c, ci) => c.classList.toggle('test', ci === cvIdx));
+        row.style.opacity = (ri === cvIdx) ? '1' : '0.45';
+      });
+    }
+    function cvNext(){
+      cvIdx = (cvIdx + 1) % 5;
+      cvRender();
+    }
+    cvRender();
+  </script>
+
+  <!-- 9. 실험 결과 : 색상 변화 (전체 데이터, 9개 특징 전부) -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>실험 결과 · 270개 데이터 전수 · 9개 특징 전부</div>
+    <h1 class="display" style="font-size:clamp(22px,3vw,32px)">pH 2~10, 실측 색이 그대로<br>데이터가 된 <em>9개의 카드</em></h1>
+
+    <div class="phcards">
+      <div class="phcard" style="background:rgb(221,27,24)"><div><div class="phn" style="color:#fff">2</div><div class="phname" style="color:#fff">선홍색</div></div><div class="vals" style="color:#fff">R 220.9<br>G 26.5<br>B 24.5<br>H 77.9°<br>S 231.9<br>V 220.9<br>L 120.1<br>a 196.8<br>b 180.5</div></div>
+      <div class="phcard" style="background:rgb(222,72,18)"><div><div class="phn" style="color:#fff">3</div><div class="phname" style="color:#fff">주황색</div></div><div class="vals" style="color:#fff">R 222.3<br>G 72.0<br>B 17.5<br>H 7.8°<br>S 236.4<br>V 222.3<br>L 132.5<br>a 184.3<br>b 186.6</div></div>
+      <div class="phcard" style="background:rgb(221,127,2)"><div><div class="phn" style="color:#fff">4</div><div class="phname" style="color:#fff">주황-노랑</div></div><div class="vals" style="color:#fff">R 221.3<br>G 126.7<br>B 2.3<br>H 16.7°<br>S 252.7<br>V 221.3<br>L 157.8<br>a 157.9<br>b 196.2</div></div>
+      <div class="phcard" style="background:rgb(221,199,28)"><div><div class="phn" style="color:#3a3418">5</div><div class="phname" style="color:#3a3418">노란색</div></div><div class="vals" style="color:#3a3418">R 221.0<br>G 199.0<br>B 28.1<br>H 26.3°<br>S 225.2<br>V 221.0<br>L 202.6<br>a 120.2<br>b 204.7</div></div>
+      <div class="phcard" style="background:rgb(166,201,44)"><div><div class="phn" style="color:#22350f">6</div><div class="phname" style="color:#22350f">연두-노랑</div></div><div class="vals" style="color:#22350f">R 166.2<br>G 201.3<br>B 43.9<br>H 36.6°<br>S 201.5<br>V 201.3<br>L 193.3<br>a 96.4<br>b 196.0</div></div>
+      <div class="phcard" style="background:rgb(73,180,71)"><div><div class="phn" style="color:#fff">7</div><div class="phname" style="color:#fff">초록색</div></div><div class="vals" style="color:#fff">R 73.4<br>G 180.4<br>B 71.5<br>H 59.3°<br>S 159.8<br>V 180.4<br>L 166.1<br>a 76.1<br>b 173.3</div></div>
+      <div class="phcard" style="background:rgb(31,164,107)"><div><div class="phn" style="color:#fff">8</div><div class="phname" style="color:#fff">청록색</div></div><div class="vals" style="color:#fff">R 31.4<br>G 164.5<br>B 107.4<br>H 76.9°<br>S 209.5<br>V 164.5<br>L 152.0<br>a 80.5<br>b 147.9</div></div>
+      <div class="phcard" style="background:rgb(19,128,180)"><div><div class="phn" style="color:#fff">9</div><div class="phname" style="color:#fff">하늘색</div></div><div class="vals" style="color:#fff">R 18.6<br>G 127.7<br>B 180.5<br>H 99.3°<br>S 231.9<br>V 180.5<br>L 127.8<br>a 119.2<br>b 92.4</div></div>
+      <div class="phcard" style="background:rgb(30,53,182)"><div><div class="phn" style="color:#fff">10</div><div class="phname" style="color:#fff">파란색</div></div><div class="vals" style="color:#fff">R 29.5<br>G 53.4<br>B 182.2<br>H 114.6°<br>S 217.3<br>V 182.2<br>L 76.1<br>a 167.8<br>b 58.7</div></div>
+    </div>
+
+    <div class="grid2 wide-left" style="margin-top:30px;">
+      <div>
+        <p class="lede" style="font-size:12.5px; max-width:60ch;">pH가 오를수록 R값은 221→19로 뚜렷하게 감소, B값은 24→182로 뚜렷하게 증가 — 9개 특징 전부를 270개 샘플 평균으로 낸 실측치이며, 카드 배경색 자체가 그 평균 RGB입니다.</p>
+      </div>
+      <div>
+        <div class="codetag">9개 특징 전체 · pH 상관계수 (절댓값 큰 순)</div>
+        <div class="corrbars-wide">
+          <div class="corrbar-row"><span class="k">R</span><div class="corrbar-track"><div class="corrbar-fill" style="left:7.15%; width:42.85%; background:#dd3226"></div></div><span class="v">−0.857</span></div>
+          <div class="corrbar-row"><span class="k">B</span><div class="corrbar-track"><div class="corrbar-fill" style="left:50%; width:42.15%; background:#2745b0"></div></div><span class="v">0.843</span></div>
+          <div class="corrbar-row"><span class="k">b*</span><div class="corrbar-track"><div class="corrbar-fill" style="left:10.75%; width:39.25%; background:#8B3F63"></div></div><span class="v">−0.785</span></div>
+          <div class="corrbar-row"><span class="k">H</span><div class="corrbar-track"><div class="corrbar-fill" style="left:50%; width:26.9%; background:#33a24a"></div></div><span class="v">0.538</span></div>
+          <div class="corrbar-row"><span class="k">a*</span><div class="corrbar-track"><div class="corrbar-fill" style="left:24.6%; width:25.4%; background:#8B3F63"></div></div><span class="v">−0.508</span></div>
+          <div class="corrbar-row"><span class="k">V</span><div class="corrbar-track"><div class="corrbar-fill" style="left:31.7%; width:18.3%; background:#378ADD"></div></div><span class="v">−0.366</span></div>
+          <div class="corrbar-row"><span class="k">S</span><div class="corrbar-track"><div class="corrbar-fill" style="left:33%; width:17%; background:#1D9E75"></div></div><span class="v">−0.340</span></div>
+          <div class="corrbar-row"><span class="k">L</span><div class="corrbar-track"><div class="corrbar-fill" style="left:40.05%; width:9.95%; background:#8B3F63"></div></div><span class="v">−0.199</span></div>
+          <div class="corrbar-row"><span class="k">G</span><div class="corrbar-track"><div class="corrbar-fill" style="left:50%; width:9.95%; background:#1D9E75"></div></div><span class="v">0.199</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. 모델 성능 비교 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>실험 결과 · 모델 성능</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,40px)">세 모델 중 <em>RandomForest</em>가<br>가장 정확했다</h1>
+    <table class="data" style="margin-top:30px; max-width:70ch;">
+      <tr><th>평가 방법</th><th>R² Score</th><th>MAE (pH 오차)</th></tr>
+      <tr><td>단순 80:20 분리</td><td class="metric-strong">0.9997</td><td>0.019</td></tr>
+      <tr><td>층화 5-Fold 교차검증 (평균)</td><td class="metric-strong">0.9981</td><td class="metric-strong">0.032</td></tr>
+      <tr><td>층화 5-Fold 교차검증 (표준편차)</td><td>±0.0023</td><td>±0.019</td></tr>
+    </table>
+    <div class="databand" style="max-width:70ch;">
+      <div class="dcell"><div class="n accentnum">74.4%</div><div class="l">R값 특징 중요도</div></div>
+      <div class="dcell"><div class="n">14.2%</div><div class="l">Lab a* 중요도</div></div>
+      <div class="dcell"><div class="n">6.8%</div><div class="l">H(색상) 중요도</div></div>
+      <div class="dcell"><div class="n">3.8%</div><div class="l">Lab b* 중요도</div></div>
+    </div>
+    <p class="lede" style="margin-top:20px;">단순 분리는 비슷한 환경의 데이터끼리 나눈 것이라 다소 낙관적 — <b style="color:var(--ink)">5-Fold 교차검증</b>이 실제 일반화 성능에 더 가까운 지표이며, 표준편차가 매우 작아(±0.019) 어떤 pH를 학습에서 빼도 안정적으로 예측함을 확인</p>
+  </section>
+
+  <!-- 11. 결론 및 시사점 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>결론 및 시사점</div>
+    <h1 class="display" style="font-size:clamp(26px,3.6vw,40px)">고가 장비 없이도<br><em>정량적인</em> pH 측정</h1>
+    <ul class="points">
+      <li>RGB·HSV·Lab 색상 정보만으로 pH를 높은 정확도로 예측 가능함을 확인</li>
+      <li>스마트폰 카메라만으로 별도 장비 없이 정량적 분석이 가능 — 교육 현장·간이 화학 분석에 활용 가능</li>
+      <li>데이터 기반 모델(k-NN)과 원리 기반 모델(PINN)을 비교해 두 접근의 장단점을 함께 확인</li>
+      <li>조명·카메라·거리 등 환경 변화에 대한 일반화 성능은 추가 검증이 필요한 과제로 남음</li>
+    </ul>
+  </section>
+
+  <!-- 10-1. 실제 사이트 링크 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>직접 접속해보기</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">화면 속 이야기가 아니라<br><em>실제로 작동하는</em> 사이트</h1>
+    <div class="linkcards">
+      <a class="linkcard" href="https://7ukvanzaqp2a2ga3ijg4vf.streamlit.app/" target="_blank" rel="noopener">
+        <div class="lc-tag" style="color:var(--rf)">RandomForest · Streamlit</div>
+        <div class="lc-title">pH 예측 웹앱</div>
+        <div class="lc-url">7ukvanzaqp2a2ga3ijg4vf.streamlit.app</div>
+      </a>
+      <a class="linkcard" href="https://woojunfs.vercel.app/" target="_blank" rel="noopener">
+        <div class="lc-tag" style="color:var(--knn)">k-NN · HTML/JS</div>
+        <div class="lc-title">브라우저 실시간 예측</div>
+        <div class="lc-url">woojunfs.vercel.app</div>
+      </a>
+      <a class="linkcard" href="https://pinn-ph.vercel.app/" target="_blank" rel="noopener">
+        <div class="lc-tag" style="color:var(--pinn)">PINN · TensorFlow.js</div>
+        <div class="lc-title">브라우저 학습 데모</div>
+        <div class="lc-url">pinn-ph.vercel.app</div>
+      </a>
+    </div>
+    <p class="lede" style="margin-top:18px; font-size:12px;">QR코드나 링크를 발표 자료에 함께 띄워두면, 심사위원이 발표 중 직접 접속해볼 수 있습니다.</p>
+  </section>
+
+  <style>
+    .linkcards{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; max-width:720px; }
+    .linkcard{ display:block; text-decoration:none; border:1px solid var(--line); border-radius:10px; padding:18px 20px; background:var(--bg-soft); transition:transform .15s, box-shadow .15s; }
+    .linkcard:hover{ transform:translateY(-3px); box-shadow:0 12px 24px -14px rgba(0,0,0,.3); }
+    .lc-tag{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; font-weight:700; margin-bottom:8px; }
+    .lc-title{ font-family:var(--serif); font-size:17px; color:var(--ink); margin-bottom:6px; }
+    .lc-url{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+  </style>
+
+  <!-- 11-1. 사후 활용 (제언) -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>사후 활용 · 제언</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">여기서 <em>더 나아간다면</em></h1>
+    <ul class="points">
+      <li>화학 실험 수업 교육 자료로 활용 — 예측값과 실측값을 비교하며 오차 사례를 직접 수집</li>
+      <li>회색 기준카드(Color Checker)를 함께 촬영해 화이트밸런스 보정 알고리즘 개선</li>
+      <li>다양한 스마트폰 기종·조명 환경에서 데이터를 추가 수집해 일반화 성능 향상</li>
+      <li>소수점 단위 pH, 다양한 지시약·용액을 포함하도록 데이터셋 확장</li>
+      <li>k-NN 웹 프로그램을 경량 서버 API 구조로 발전시켜 여러 사용자가 동시에 사용 가능하도록 확장</li>
+    </ul>
+  </section>
+
+  <!-- 11-2. 참고문헌 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>참고문헌</div>
+    <h1 class="display" style="font-size:clamp(24px,3.2vw,36px)">이 연구가 <em>기댄</em> 자료들</h1>
+    <div class="reflist">
+      <div class="refcol">
+        <div class="refitem"><span class="refnum">[1]</span>scikit-learn developers, <i>RandomForestRegressor Documentation</i></div>
+        <div class="refitem"><span class="refnum">[2]</span>PyTorch contributors, <i>PyTorch Documentation</i></div>
+        <div class="refitem"><span class="refnum">[3]</span>OpenCV team, <i>OpenCV Documentation</i></div>
+        <div class="refitem"><span class="refnum">[4]</span>Streamlit Inc., <i>Streamlit Documentation</i></div>
+        <div class="refitem"><span class="refnum">[5]</span>Chart.js contributors, <i>Chart.js Documentation</i></div>
+        <div class="refitem"><span class="refnum">[6]</span>김아림·신용태 (2018), RGB 성분을 활용한 색상 속성 차이도 판별 기법, 한국IT정책경영학회 논문지, 10(1), 695–701.</div>
+      </div>
+      <div class="refcol">
+        <div class="refitem"><span class="refnum">[7]</span>Azad, Hasan & Naseer, <i>Color Image Processing in Digital Image</i></div>
+        <div class="refitem"><span class="refnum">[8]</span>김재만 (2021), pH 지시약 기반 색 변환 센서를 이용한 실시간 연어 부패 모니터링</div>
+        <div class="refitem"><span class="refnum">[9]</span>Wosiak & Zakrzewski (2018), <i>Integrating Correlated Color Temperature and Machine Learning Algorithms</i></div>
+        <div class="refitem"><span class="refnum">[10]</span>백영태 외 (2017), OpenCV 영상처리와 TensorFlow 딥러닝 기반 지능형 실종자 색인 시스템</div>
+        <div class="refitem"><span class="refnum">[11]</span>전주현 외 (2022), 오렌지 파이 하드웨어와 AI를 활용한 RGB 색상분류 모델 개발 및 성능분석</div>
+        <div class="refitem"><span class="refnum">[12]</span>노동규 (2023), 과학 데이터 기반 인공지능(AI)·고등학교 과학 융합 교육 프로그램의 개발 및 적용</div>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .reflist{ display:grid; grid-template-columns:1fr 1fr; gap:0 32px; margin-top:20px; }
+    .refcol{ display:flex; flex-direction:column; }
+    .refitem{ font-size:11.5px; color:var(--muted); line-height:1.5; padding:9px 0; border-bottom:1px solid var(--line); }
+    .refnum{ font-family:var(--mono); color:var(--ink); font-weight:700; margin-right:8px; }
+  </style>
+
+  <!-- 12. 마무리 -->
+  <section class="slide" data-accent="--neutral">
+    <div class="eyebrow"><span class="bar"></span>마무리</div>
+    <div class="closebig">색이 곧 데이터가,<br>데이터가 곧 <span class="accent">pH</span>가 되는<br>시스템을 만들었습니다.</div>
+    <div class="meta" style="margin-top:32px;">감사합니다 &nbsp;·&nbsp; 찍고보자 팀</div>
+  </section>
+
+</div>
+
+<button class="edgebtn left" aria-label="이전 슬라이드" onclick="go(-1)"></button>
+<button class="edgebtn right" aria-label="다음 슬라이드" onclick="go(1)"></button>
+
+<div class="bottom-nav">
+  <div class="dots" id="dots"></div>
+  <div class="pagenum" id="pagenum">01 / 12</div>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const dotsWrap = document.getElementById('dots');
+  const pagenum = document.getElementById('pagenum');
+  let current = 0;
+
+  slides.forEach((_, i) => {
+    const b = document.createElement('button');
+    b.className = 'sdot';
+    b.setAttribute('aria-label', `슬라이드 ${i+1}로 이동`);
+    b.onclick = () => render(i);
+    dotsWrap.appendChild(b);
+  });
+  const dots = Array.from(dotsWrap.children);
+
+  function render(i){
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === current));
+    dots.forEach((d, idx) => d.classList.toggle('active', idx === current));
+    document.documentElement.style.setProperty('--accent', `var(${slides[current].dataset.accent})`);
+    pagenum.textContent = String(current+1).padStart(2,'0') + ' / ' + String(slides.length).padStart(2,'0');
+  }
+
+  function go(delta){ render(current + delta); }
+
+  document.addEventListener('keydown', (e) => {
+    if(['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)){ e.preventDefault(); go(1); }
+    if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); go(-1); }
+  });
+
+  render(0);
+</script>
+
+</body>
+</html>
